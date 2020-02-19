@@ -2,20 +2,27 @@ package main
 
 import (
 	"context"
+	"os"
+	"time"
+
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"time"
 )
 
+var mongoAddr = os.Getenv("MONGO_ADDR")
+
 func main() {
+	if mongoAddr == "" {
+		panic("empty MONGO_ADDR")
+	}
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://127.0.0.1:27017"))
+	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoAddr))
 	if err != nil {
 		panic(err)
 	}
@@ -26,7 +33,7 @@ func main() {
 	const dbName = "incrementer"
 	collection := mongoClient.Database(dbName).Collection(dbName)
 
-	handlers := &Handlers{mongoCollection:collection}
+	handlers := &Handlers{mongoCollection: collection}
 	// Routes
 	api := e.Group("/api")
 	v1 := api.Group("/v1")
