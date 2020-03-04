@@ -1,44 +1,41 @@
 package main
 
 import (
-	"context"
-	"os"
-	"time"
-
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
+	"incrementer/application"
+	"incrementer/log"
+	"incrementer/server"
+	"incrementer/storage/mongostorage"
+	"net/http"
 )
 
-var mongoAddr = os.Getenv("MONGO_ADDR")
+const defaultMongoDb = "incrementer"
+const defaultAddress = ":8000"
 
 func main() {
-	if mongoAddr == "" {
-		panic("empty MONGO_ADDR")
-	}
-	e := echo.New()
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
+	var mongoAddr = getEnvPanic("MONGO_ADDR")
+	var mongoDb = getEnv("MONGO_DB", defaultMongoDb)
+	var mongoCollection = getEnv("MONGO_COLLECTION", defaultMongoDb)
+	var appAddress = getEnv("APP_ADDRESS", defaultAddress)
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoAddr))
+	collection, err := getMongoCollection(mongoAddr, mongoDb, mongoCollection)
 	if err != nil {
 		panic(err)
 	}
-	err = mongoClient.Ping(ctx, nil)
-	if err != nil {
+
+	storage := &mongostorage.MongoStorage{
+		Collection: collection,
+	}
+
+	app := &application.Application{
+		Storage: storage,
+	}
+
+	var logger = log.New().With(zap.String("app", "incrementer"))
+
+	handler := server.NewServer(logger, app)
+
+	if err := http.ListenAndServe(appAddress, handler); err != nil {
 		panic(err)
 	}
-	const dbName = "incrementer"
-	collection := mongoClient.Database(dbName).Collection(dbName)
-
-	handlers := &Handlers{mongoCollection: collection}
-	// Routes
-	api := e.Group("/api")
-	v1 := api.Group("/v1")
-	v1.POST("/inc", handlers.incrementerHandler)
-
-	// Start server
-	e.Logger.Fatal(e.Start(":8000"))
 }
